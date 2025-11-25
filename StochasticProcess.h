@@ -6,11 +6,15 @@
 class StochasticProcess {
 public:
     StochasticProcess(double dr,double df,WienerProcess& wn);
-    long double update(long double current_price,double dt);
+    virtual long double update(long double current_price,double dt);
+    virtual ~StochasticProcess() = default;
+    double getDiffusion();
+    double getDrift();
 private:
     double drift;
-    double diffusion;
-    WienerProcess& wiener;
+    double diffusion; 
+protected:
+WienerProcess& wiener;
 };
 
 #endif //STOCHASTIC_PROCESS_H

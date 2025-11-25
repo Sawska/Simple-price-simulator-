@@ -9,6 +9,10 @@ set(SOURCE_FILES
     main.cpp
     StochasticProcess.cpp
     WienerProcess.cpp
+    JumpDiffusionProcess.cpp
+    BatesProcess.cpp
+    HestonProcess.cpp
+    MeanRevertingProcess.cpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCE_FILES})
