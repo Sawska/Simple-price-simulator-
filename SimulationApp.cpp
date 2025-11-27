@@ -61,7 +61,10 @@ void SimulationApp::handleEvents() {
                 scrollOffset -= 1;
                 if (scrollOffset < 0) scrollOffset = 0;
             }
-            if (e.key.keysym.sym == SDLK_SPACE) isPaused = !isPaused;
+            if (e.key.keysym.sym == SDLK_SPACE) {
+                isPaused = !isPaused;
+                 scrollOffset = 0;
+            }
         }
     }
 }
@@ -111,6 +114,7 @@ void SimulationApp::render() {
 
     
     int chartWidth = screenWidth - RIGHT_MARGIN;
+    SDL_Rect chartArea = {0, 0, chartWidth, screenHeight};
     int max_visible_candles = chartWidth / (int)candleWidth + 2;
     int total_candles = candles.size();
     
@@ -133,14 +137,15 @@ void SimulationApp::render() {
     }
 
     double padding = (max_p - min_p) * 0.1;
-    if (padding == 0) padding = 1.0; // Prevent divide by zero on flat line
+    if (padding == 0) padding = 1.0; 
     min_p -= padding;
     max_p += padding;
 
-    // 4. Draw Mesh Grid & Axis Labels (Binance Style)
-    drawGrid(min_p, max_p);
+    drawGrid(min_p, max_p, start_index, end_index);
 
-    // 5. Draw Candles
+    SDL_RenderSetClipRect(renderer, &chartArea);
+
+
     for (int i = start_index; i < end_index; ++i) {
         Candle& c = candles[i];
         int x_pos = (i - start_index) * candleWidth;
@@ -165,7 +170,7 @@ void SimulationApp::render() {
         SDL_RenderFillRect(renderer, &body);
     }
 
-    // 6. Draw Live Candle
+
     if (scrollOffset == 0) {
         int x_pos = (end_index - start_index) * candleWidth;
         int y_open = (int)map_range(current_candle.open, min_p, max_p, screenHeight - 50, 50);
@@ -186,16 +191,11 @@ void SimulationApp::render() {
         SDL_Rect body = { x_pos + 1, rect_y, (int)candleWidth - 2, rect_h };
         SDL_RenderFillRect(renderer, &body);
         
-        // Draw current price line
-        SDL_SetRenderDrawColor(renderer, 200, 200, 200, 100); // Faint white line
-        SDL_RenderDrawLine(renderer, 0, y_close, screenWidth - RIGHT_MARGIN, y_close);
-        
-        // Highlight current price label
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        drawPriceLabel(screenWidth - RIGHT_MARGIN + 5, y_close - 4, current_candle.close);
     }
 
-    // 7. Draw UI (Sentiment)
+    SDL_RenderSetClipRect(renderer, NULL);
+
+
     int bar_height = 20;
     SDL_Rect sentiment_bar = {0, screenHeight - bar_height, screenWidth, bar_height};
     if (current_sentiment >= 0) SDL_SetRenderDrawColor(renderer, 0, (int)(current_sentiment * 255), 0, 255);
@@ -215,108 +215,122 @@ void SimulationApp::render() {
 
 
 
-void SimulationApp::drawGrid(double min_p, double max_p) {
+void SimulationApp::drawGrid(double min_p, double max_p, int start_idx, int end_idx) {
+
     double range = max_p - min_p;
-    // Calculate a "nice" step size (e.g., 10, 5, 1, 0.5)
     double step = std::pow(10, std::floor(std::log10(range)));
     if (range / step < 4) step /= 2.0;
     if (range / step > 10) step *= 2.0;
 
-    // Find first grid line
-    double start = std::ceil(min_p / step) * step;
+    double start_p = std::ceil(min_p / step) * step;
 
-    // Draw horizontal lines
-    SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255); // Dark Gray
+    SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
     
-    for (double p = start; p < max_p; p += step) {
+    for (double p = start_p; p < max_p; p += step) {
         int y = (int)map_range(p, min_p, max_p, screenHeight - 50, 50);
-        
-        // 1. Draw Line
         SDL_RenderDrawLine(renderer, 0, y, screenWidth - RIGHT_MARGIN, y);
-        
-        // 2. Draw Label on Right Axis
         drawPriceLabel(screenWidth - RIGHT_MARGIN + 5, y - 4, p);
     }
     
-    // Draw Vertical Axis Line
+    int grid_pixel_spacing = 120; 
+    int candle_step = std::max(1, (int)(grid_pixel_spacing / candleWidth));
+    
+    
+    int first_line_idx = (start_idx / candle_step) * candle_step;
+    if (first_line_idx < start_idx) first_line_idx += candle_step;
+
+    
+    int chartWidth = screenWidth - RIGHT_MARGIN;
+    int max_screen_candles = chartWidth / (int)candleWidth + 2;
+    int loop_end_idx = start_idx + max_screen_candles;
+
+    for (int i = first_line_idx; i < loop_end_idx; i += candle_step) {
+        
+        int x = (int)((i - start_idx) * candleWidth);
+        
+        if (x < screenWidth - RIGHT_MARGIN) {
+            SDL_RenderDrawLine(renderer, x, 0, x, screenHeight);
+        }
+    }
+
+    SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255); 
     SDL_RenderDrawLine(renderer, screenWidth - RIGHT_MARGIN, 0, screenWidth - RIGHT_MARGIN, screenHeight);
+    SDL_RenderDrawLine(renderer, 0, screenHeight - 1, screenWidth - RIGHT_MARGIN, screenHeight - 1);
 }
 
 void SimulationApp::drawPriceLabel(int x, int y, double price) {
     char buffer[16];
-    sprintf(buffer, "%.2f", price); // Format to 2 decimals
+    sprintf(buffer, "%.2f", price); 
     
     int cursor_x = x;
     for(int i=0; buffer[i] != '\0'; ++i) {
         drawDigit(cursor_x, y, buffer[i]);
-        cursor_x += 7; // Spacing between digits
+        cursor_x += 7; 
     }
 }
 
-// A mini "Pixel Font" renderer
 void SimulationApp::drawDigit(int x, int y, char digit) {
-    // Simple 5x7 pixel font logic
-    // Using SDL_RenderDrawLine for segments
-    SDL_SetRenderDrawColor(renderer, 180, 180, 180, 255); // Light Gray Text
+
+    SDL_SetRenderDrawColor(renderer, 180, 180, 180, 255); 
 
     switch(digit) {
         case '0': 
-            SDL_RenderDrawLine(renderer, x, y, x+4, y);     // Top
-            SDL_RenderDrawLine(renderer, x, y+6, x+4, y+6); // Bottom
-            SDL_RenderDrawLine(renderer, x, y, x, y+6);     // Left
-            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+6); // Right
+            SDL_RenderDrawLine(renderer, x, y, x+4, y);     
+            SDL_RenderDrawLine(renderer, x, y+6, x+4, y+6); 
+            SDL_RenderDrawLine(renderer, x, y, x, y+6);     
+            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+6); 
             break;
         case '1':
             SDL_RenderDrawLine(renderer, x+2, y, x+2, y+6);
             break;
         case '2':
-            SDL_RenderDrawLine(renderer, x, y, x+4, y);     // Top
-            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+3); // Right Top
-            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); // Middle
-            SDL_RenderDrawLine(renderer, x, y+3, x, y+6);   // Left Bottom
-            SDL_RenderDrawLine(renderer, x, y+6, x+4, y+6); // Bottom
+            SDL_RenderDrawLine(renderer, x, y, x+4, y);     
+            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+3); 
+            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); 
+            SDL_RenderDrawLine(renderer, x, y+3, x, y+6);   
+            SDL_RenderDrawLine(renderer, x, y+6, x+4, y+6); 
             break;
         case '3':
-            SDL_RenderDrawLine(renderer, x, y, x+4, y);     // Top
-            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); // Middle
-            SDL_RenderDrawLine(renderer, x, y+6, x+4, y+6); // Bottom
-            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+6); // Right
+            SDL_RenderDrawLine(renderer, x, y, x+4, y);     
+            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); 
+            SDL_RenderDrawLine(renderer, x, y+6, x+4, y+6); 
+            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+6); 
             break;
         case '4':
-            SDL_RenderDrawLine(renderer, x, y, x, y+3);     // Left Top
-            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); // Middle
-            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+6); // Right
+            SDL_RenderDrawLine(renderer, x, y, x, y+3);     
+            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); 
+            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+6); 
             break;
         case '5':
-            SDL_RenderDrawLine(renderer, x, y, x+4, y);     // Top
-            SDL_RenderDrawLine(renderer, x, y, x, y+3);     // Left Top
-            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); // Middle
-            SDL_RenderDrawLine(renderer, x+4, y+3, x+4, y+6); // Right Bottom
-            SDL_RenderDrawLine(renderer, x, y+6, x+4, y+6); // Bottom
+            SDL_RenderDrawLine(renderer, x, y, x+4, y);     
+            SDL_RenderDrawLine(renderer, x, y, x, y+3);     
+            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); 
+            SDL_RenderDrawLine(renderer, x+4, y+3, x+4, y+6);
+            SDL_RenderDrawLine(renderer, x, y+6, x+4, y+6); 
             break;
         case '6':
-            SDL_RenderDrawLine(renderer, x, y, x+4, y);     // Top
-            SDL_RenderDrawLine(renderer, x, y, x, y+6);     // Left
-            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); // Middle
-            SDL_RenderDrawLine(renderer, x, y+6, x+4, y+6); // Bottom
-            SDL_RenderDrawLine(renderer, x+4, y+3, x+4, y+6); // Right Bottom
+            SDL_RenderDrawLine(renderer, x, y, x+4, y);     
+            SDL_RenderDrawLine(renderer, x, y, x, y+6);     
+            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); 
+            SDL_RenderDrawLine(renderer, x, y+6, x+4, y+6); 
+            SDL_RenderDrawLine(renderer, x+4, y+3, x+4, y+6); 
             break;
         case '7':
-            SDL_RenderDrawLine(renderer, x, y, x+4, y);     // Top
-            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+6); // Right
+            SDL_RenderDrawLine(renderer, x, y, x+4, y);    
+            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+6); 
             break;
         case '8':
-            SDL_RenderDrawLine(renderer, x, y, x+4, y);     // Top
-            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); // Middle
-            SDL_RenderDrawLine(renderer, x, y+6, x+4, y+6); // Bottom
-            SDL_RenderDrawLine(renderer, x, y, x, y+6);     // Left
-            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+6); // Right
+            SDL_RenderDrawLine(renderer, x, y, x+4, y);     
+            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); 
+            SDL_RenderDrawLine(renderer, x, y+6, x+4, y+6); 
+            SDL_RenderDrawLine(renderer, x, y, x, y+6);     
+            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+6); 
             break;
         case '9':
-            SDL_RenderDrawLine(renderer, x, y, x+4, y);     // Top
-            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); // Middle
-            SDL_RenderDrawLine(renderer, x, y, x, y+3);     // Left Top
-            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+6); // Right
+            SDL_RenderDrawLine(renderer, x, y, x+4, y);     
+            SDL_RenderDrawLine(renderer, x, y+3, x+4, y+3); 
+            SDL_RenderDrawLine(renderer, x, y, x, y+3);     
+            SDL_RenderDrawLine(renderer, x+4, y, x+4, y+6); 
             break;
         case '.':
             SDL_RenderDrawPoint(renderer, x+2, y+6);

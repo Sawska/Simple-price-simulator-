@@ -30,7 +30,7 @@ private:
     double map_range(double value, double in_min, double in_max, double out_min, double out_max);
     double calculate_lambda(double sentiment);
 
-    void drawGrid(double min_p, double max_p);
+    void drawGrid(double min_p, double max_p, int start_idx, int end_idx);
     void drawPriceLabel(int x, int y, double price);
     void drawDigit(int x, int y, char digit);
 
